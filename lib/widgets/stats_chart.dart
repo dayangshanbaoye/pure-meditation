@@ -6,6 +6,8 @@ import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
 
 /// 增强版统计图表 — 渐变柱状图 + 发光折线 + 时间范围切换
+enum ChartRange { week, month, year }
+
 class StatsChart extends StatefulWidget {
   final List<DailyStats> dailyStats;
 
@@ -16,7 +18,7 @@ class StatsChart extends StatefulWidget {
 }
 
 class _StatsChartState extends State<StatsChart> {
-  int _daysRange = 7;
+  ChartRange _range = ChartRange.week;
   int? _touchedIndex;
 
   @override
@@ -24,59 +26,117 @@ class _StatsChartState extends State<StatsChart> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    final Map<String, int> statsMap = {
-      for (var stat in widget.dailyStats) stat.date: stat.totalDurationSeconds
-    };
-
-    final dateFormat = DateFormat('yyyy-MM-dd');
-    final shortFormat = _daysRange <= 7
-        ? DateFormat('E', 'en')
-        : DateFormat('MM/dd');
-
     List<BarChartGroupData> barGroups = [];
     List<FlSpot> lineSpots = [];
     double cumulative = 0;
     double maxBarValue = 0;
+    int barsCount = 0;
 
-    for (int i = _daysRange - 1; i >= 0; i--) {
-      final date = today.subtract(Duration(days: i));
-      final dateStr = dateFormat.format(date);
-      final duration = statsMap[dateStr] ?? 0;
-      final durationMinutes = duration / 60.0;
+    if (_range == ChartRange.week || _range == ChartRange.month) {
+      barsCount = _range == ChartRange.week ? 7 : 30;
+      final Map<String, int> statsMap = {
+        for (var stat in widget.dailyStats) stat.date: stat.totalDurationSeconds
+      };
+      final dateFormat = DateFormat('yyyy-MM-dd');
 
-      cumulative += durationMinutes;
-      if (durationMinutes > maxBarValue) maxBarValue = durationMinutes;
+      for (int i = barsCount - 1; i >= 0; i--) {
+        final date = today.subtract(Duration(days: i));
+        final dateStr = dateFormat.format(date);
+        final duration = statsMap[dateStr] ?? 0;
+        final durationMinutes = duration / 60.0;
 
-      final x = _daysRange - 1 - i;
+        cumulative += durationMinutes;
+        if (durationMinutes > maxBarValue) maxBarValue = durationMinutes;
 
-      barGroups.add(
-        BarChartGroupData(
-          x: x,
-          barRods: [
-            BarChartRodData(
-              toY: durationMinutes,
-              width: _daysRange <= 7 ? 20 : (_daysRange <= 14 ? 12 : 8),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
-              gradient: LinearGradient(
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
-                colors: [
-                  AppColors.primary.withOpacity(0.05),
-                  AppColors.primary.withOpacity(0.6),
-                ],
+        final x = barsCount - 1 - i;
+
+        barGroups.add(
+          BarChartGroupData(
+            x: x,
+            barRods: [
+              BarChartRodData(
+                toY: durationMinutes,
+                width: _range == ChartRange.week ? 20 : 8,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    AppColors.primary.withOpacity(0.05),
+                    AppColors.primary.withOpacity(0.6),
+                  ],
+                ),
+                backDrawRodData: BackgroundBarChartRodData(
+                  show: true,
+                  toY: maxBarValue > 0 ? maxBarValue * 1.3 : 10,
+                  color: AppColors.surface1.withOpacity(0.3),
+                ),
               ),
-              backDrawRodData: BackgroundBarChartRodData(
-                show: true,
-                toY: maxBarValue > 0 ? maxBarValue * 1.3 : 10,
-                color: AppColors.surface1.withOpacity(0.3),
-              ),
-            ),
-          ],
-          showingTooltipIndicators: _touchedIndex == x ? [0] : [],
-        ),
-      );
+            ],
+            showingTooltipIndicators: _touchedIndex == x ? [0] : [],
+          ),
+        );
 
-      lineSpots.add(FlSpot(x.toDouble(), cumulative));
+        lineSpots.add(FlSpot(x.toDouble(), cumulative));
+      }
+    } else {
+      // Year view: 12 months
+      barsCount = 12;
+      for (int i = 11; i >= 0; i--) {
+        int targetMonth = today.month - i;
+        int targetYear = today.year;
+        while (targetMonth <= 0) {
+          targetMonth += 12;
+          targetYear -= 1;
+        }
+
+        int monthlySecs = 0;
+        for (var stat in widget.dailyStats) {
+          try {
+            final date = DateTime.parse(stat.date);
+            if (date.year == targetYear && date.month == targetMonth) {
+              monthlySecs += stat.totalDurationSeconds;
+            }
+          } catch (e) {
+            // ignore parse errors
+          }
+        }
+
+        final durationMinutes = monthlySecs / 60.0;
+        cumulative += durationMinutes;
+        if (durationMinutes > maxBarValue) maxBarValue = durationMinutes;
+
+        final x = 11 - i;
+
+        barGroups.add(
+          BarChartGroupData(
+            x: x,
+            barRods: [
+              BarChartRodData(
+                toY: durationMinutes,
+                width: 14,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    AppColors.primary.withOpacity(0.05),
+                    AppColors.primary.withOpacity(0.6),
+                  ],
+                ),
+                backDrawRodData: BackgroundBarChartRodData(
+                  show: true,
+                  toY: maxBarValue > 0 ? maxBarValue * 1.3 : 10,
+                  color: AppColors.surface1.withOpacity(0.3),
+                ),
+              ),
+            ],
+            showingTooltipIndicators: _touchedIndex == x ? [0] : [],
+          ),
+        );
+
+        lineSpots.add(FlSpot(x.toDouble(), cumulative));
+      }
     }
 
     final double maxY = maxBarValue > 0 ? maxBarValue * 1.3 : 10.0;
@@ -129,9 +189,15 @@ class _StatsChartState extends State<StatsChart> {
                     touchTooltipData: BarTouchTooltipData(
                       getTooltipColor: (_) => AppColors.surface3,
                       getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                        final mins = rod.toY.toStringAsFixed(0);
+                        final mins = rod.toY;
+                        String text;
+                        if (mins >= 120) {
+                          text = '${(mins / 60).toStringAsFixed(1)} 小时';
+                        } else {
+                          text = '${mins.toStringAsFixed(0)} 分钟';
+                        }
                         return BarTooltipItem(
-                          '$mins 分钟',
+                          text,
                           AppTypography.caption.copyWith(
                             color: AppColors.primary,
                             fontWeight: FontWeight.w600,
@@ -160,6 +226,17 @@ class _StatsChartState extends State<StatsChart> {
                         interval: maxY / 4,
                         getTitlesWidget: (value, meta) {
                           if (value == 0) return const SizedBox.shrink();
+                          
+                          // Convert to hours if values are large (e.g. Year view)
+                          if (maxY >= 120) {
+                             if (value % 60 == 0 || value == (maxY / 4).ceilToDouble()) {
+                                return Text(
+                                  '${(value / 60).toStringAsFixed(1)}h',
+                                  style: AppTypography.caption,
+                                );
+                             }
+                          }
+                          
                           return Text(
                             '${value.toInt()}m',
                             style: AppTypography.caption,
@@ -170,21 +247,37 @@ class _StatsChartState extends State<StatsChart> {
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
-                        interval: _daysRange <= 7 ? 1.0 : (_daysRange <= 14 ? 3.0 : 6.0),
+                        interval: 1.0, 
                         getTitlesWidget: (value, meta) {
-                          final dayIndex = value.toInt();
-                          if (dayIndex < 0 || dayIndex >= _daysRange) {
+                          final idx = value.toInt();
+                          if (idx < 0 || idx >= barsCount) {
                             return const SizedBox.shrink();
                           }
-                          final date = today.subtract(
-                              Duration(days: _daysRange - 1 - dayIndex));
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: Text(
-                              shortFormat.format(date),
-                              style: AppTypography.caption,
-                            ),
-                          );
+                          
+                          Widget textWidget(String text) {
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child: Text(text, style: AppTypography.caption),
+                            );
+                          }
+
+                          if (_range == ChartRange.week) {
+                            final date = today.subtract(Duration(days: 6 - idx));
+                            return textWidget(DateFormat('E', 'en').format(date));
+                          } else if (_range == ChartRange.month) {
+                            // Show points to prevent overlap
+                            if (idx == 0 || idx == 10 || idx == 20 || idx == 29) {
+                              final date = today.subtract(Duration(days: 29 - idx));
+                              return textWidget(DateFormat('M/d').format(date));
+                            }
+                          } else if (_range == ChartRange.year) {
+                            // Show all 12 months, abbreviated
+                            int targetMonth = today.month - (11 - idx);
+                            while (targetMonth <= 0) targetMonth += 12;
+                            const months = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+                            return textWidget(months[targetMonth - 1]);
+                          }
+                          return const SizedBox.shrink();
                         },
                       ),
                     ),
@@ -244,11 +337,17 @@ class _StatsChartState extends State<StatsChart> {
   }
 
   Widget _buildRangeChips() {
+    final Map<ChartRange, String> rangeNames = {
+      ChartRange.week: '周',
+      ChartRange.month: '月',
+      ChartRange.year: '年',
+    };
+
     return Row(
-      children: [7, 14, 30].map((days) {
-        final isSelected = _daysRange == days;
+      children: ChartRange.values.map((range) {
+        final isSelected = _range == range;
         return GestureDetector(
-          onTap: () => setState(() => _daysRange = days),
+          onTap: () => setState(() => _range = range),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -266,7 +365,7 @@ class _StatsChartState extends State<StatsChart> {
               ),
             ),
             child: Text(
-              '${days}天',
+              rangeNames[range]!,
               style: AppTypography.caption.copyWith(
                 color: isSelected ? AppColors.primary : AppColors.textTertiary,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
