@@ -1,0 +1,245 @@
+# Pure Meditation App 实施计划
+
+基于 [PureMeditation.md](file:///c:/Users/zheng/Desktop/pure-meditation/PureMeditation.md) 设计文档，构建一款极简、优雅的冥想计时与数据可视化 Flutter 应用。
+
+---
+
+## Proposed Changes
+
+### Phase 0: 项目初始化 (Project Setup)
+
+#### [NEW] Flutter 项目脚手架
+
+- 使用 `flutter create --org com.puremeditation pure_meditation` 在工作区目录下初始化 Flutter 项目
+- 配置 `pubspec.yaml`，添加如下核心依赖：
+
+| 包名 | 用途 |
+|---|---|
+| `hive` / `hive_flutter` | 轻量级本地 NoSQL 存储 |
+| `uuid` | 生成唯一 ID |
+| `fl_chart` | 柱状图 + 折线图 |
+| `audioplayers` | 音频播放（本地 & 在线） |
+| `provider` | 状态管理 |
+| `intl` | 日期/时间国际化格式 |
+| `path_provider` | 获取本地文件路径 |
+
+- 删除默认示例代码，建立以下目录结构：
+
+```
+lib/
+├── main.dart                  # 入口 + App 配置
+├── models/                    # 数据模型
+│   ├── meditation_type.dart
+│   └── meditation_record.dart
+├── services/                  # 业务逻辑层
+│   ├── storage_service.dart   # Hive 数据存储
+│   ├── timer_service.dart     # 计时器逻辑
+│   └── audio_service.dart     # 音频播放
+├── providers/                 # 状态管理
+│   ├── meditation_provider.dart
+│   └── timer_provider.dart
+├── screens/                   # 页面
+│   ├── home_screen.dart       # 冥想计时主页
+│   ├── stats_screen.dart      # 统计可视化页
+│   └── type_manage_screen.dart# 类型管理页
+├── widgets/                   # 可复用组件
+│   ├── breathing_button.dart  # 呼吸灯按钮
+│   ├── heatmap_widget.dart    # GitHub 热力图
+│   ├── stats_chart.dart       # 柱状图 + 折线图
+│   └── audio_picker.dart      # 音频选择器
+└── theme/
+    └── app_theme.dart         # 深色主题 & 设计语言
+```
+
+---
+
+### Phase 1: 数据模型与存储 (Data Model & Storage)
+
+#### [NEW] `lib/models/meditation_type.dart`
+
+- 定义 `MeditationType` Hive 模型（`@HiveType`）
+- 字段：`id` (String/UUID)，`name` (String)，`colorCode` (String，如 `#00FF00`)
+
+#### [NEW] `lib/models/meditation_record.dart`
+
+- 定义 `MeditationRecord` Hive 模型
+- 字段：`id`，`startTime` (DateTime)，`endTime` (DateTime)，`durationSeconds` (int)，`typeId` (String)，`musicUsed` (String? 可选)
+
+#### [NEW] `lib/services/storage_service.dart`
+
+- 封装 Hive 的初始化、Box 打开/关闭
+- 提供 CRUD 方法：
+  - `addType()` / `updateType()` / `deleteType()` / `getAllTypes()`
+  - `addRecord()` / `deleteRecord()` / `getRecordsByDateRange()` / `getRecordsByType()`
+- 首次启动时预置 3 个默认冥想类型（正念呼吸、内观、睡前放松）
+
+---
+
+### Phase 2: 核心冥想计时器 (Meditation Timer)
+
+#### [NEW] `lib/services/timer_service.dart`
+
+- 基于 `Stopwatch` + `Timer.periodic` 实现计时逻辑
+- 提供 `start()` / `stop()` / `reset()` / `elapsed` 接口
+- stop 时自动调用 `StorageService.addRecord()` 保存记录
+
+#### [NEW] `lib/providers/timer_provider.dart`
+
+- 使用 `ChangeNotifier` 包装 `TimerService`
+- 暴露状态：`isRunning`，`elapsedSeconds`，`selectedType`，`selectedAudio`
+
+#### [NEW] `lib/screens/home_screen.dart`
+
+- 深色背景，居中显示大号计时数字（`HH:MM:SS`）
+- 底部放置呼吸灯动效按钮（开始/结束）
+- 顶部小型下拉菜单选择冥想类型
+- 音频选择入口（图标按钮）
+
+#### [NEW] `lib/widgets/breathing_button.dart`
+
+- 使用 `AnimatedContainer` 或 `AnimationController` 实现脉动呼吸光效
+- 呼吸频率 4-6 秒/次（~5 秒一个周期）
+- 按钮状态：静息态（缓慢脉动）→ 运行态（高亮、持续呼吸动效）
+
+---
+
+### Phase 3: 音频播放 (Audio Playback)
+
+#### [NEW] `lib/services/audio_service.dart`
+
+- 封装 `audioplayers` 播放器
+- 支持三种来源：
+  1. 内置环境音（asset 中的 3 个音频文件：雨声、海浪、颂钵）
+  2. 本地文件（通过 `file_picker` 选择）
+  3. 在线 URL 流
+- 提供 `play()` / `pause()` / `stop()` / `setLoop()` 接口
+
+#### [NEW] `lib/widgets/audio_picker.dart`
+
+- 底部弹出面板 (BottomSheet)，展示音频列表
+- 分组：内置音频 / 本地文件 / URL 输入
+
+> [!NOTE]
+> 初始阶段可先实现内置音频 + URL 播放，本地文件选择后续迭代添加。
+
+---
+
+### Phase 4: 冥想类型管理 (Type Management)
+
+#### [NEW] `lib/screens/type_manage_screen.dart`
+
+- 列表式展示所有冥想类型（名称 + 颜色圆点）
+- 支持滑动删除 / 点击编辑
+- 右上角 "+" 按钮 → 弹出对话框（输入名称 + 选择颜色）
+- 颜色选择：提供预设调色板（12-16 个颜色）
+
+#### [NEW] `lib/providers/meditation_provider.dart`
+
+- 管理 `List<MeditationType>` 和 `List<MeditationRecord>` 的状态
+- 监听数据变化，通知 UI 刷新
+
+---
+
+### Phase 5: 数据统计与可视化 (Statistics & Visualization)
+
+#### [NEW] `lib/screens/stats_screen.dart`
+
+- 页面布局（从上到下）：
+  1. 顶部：核心数据卡片（总冥想时长、总次数、连续打卡天数）— 大字体，荧光绿色
+  2. 中部：GitHub 热力图（365 天网格）
+  3. 底部：柱状图 + 折线图叠加
+  4. 顶部右侧：类型筛选下拉菜单
+
+#### [NEW] `lib/widgets/heatmap_widget.dart`
+
+- 使用 `CustomPaint` 或 `GridView.builder` 绘制 52×7 的格子
+- 颜色映射规则：
+  - 无记录 → 深灰 (`#1a1a2e`)
+  - < 10 分钟 → 浅绿 (`#0e4429`)
+  - 10-30 分钟 → 中绿 (`#006d32`)
+  - \> 30 分钟 → 亮绿 (`#26a641`)
+- 支持横向滚动以查看不同时间段
+- 点击某天弹出详情（日期 + 时长 + 次数）
+
+#### [NEW] `lib/widgets/stats_chart.dart`
+
+- 使用 `fl_chart` 的 `BarChart` + `LineChart` 组合实现
+- 柱状图：月度/周度累计时长
+- 折线图：叠加显示历史累计总时长增长趋势
+- 支持切换时间粒度（周/月）
+
+---
+
+### Phase 6: UI 主题与动画打磨 (Theme & Polish)
+
+#### [NEW] `lib/theme/app_theme.dart`
+
+- 定义深色主题 `ThemeData`：
+  - `scaffoldBackgroundColor`: 深藏青色 (`#0a0e21`)
+  - `primaryColor` / `accentColor`: 荧光青绿 (`#00FFC8`)
+  - 字体：Google Fonts `Inter` 或 `Outfit`
+  - 卡片圆角、阴影统一规范
+
+#### [MODIFY] `lib/main.dart`
+
+- 初始化 Hive
+- 注册 Provider
+- 应用深色主题
+- 设置底部导航栏（3 个页面：冥想、统计、类型管理）
+
+---
+
+### Phase 7: 后台运行 (Background Service)
+
+> [!IMPORTANT]
+> 后台运行涉及平台原生能力，需使用 `flutter_background_service` 或 `workmanager` 插件。音频播放在后台通过 `audioplayers` 的原生能力支持。初期可先验证 Android 平台。
+
+- 添加 `flutter_background_service` 依赖
+- 配置 Android `AndroidManifest.xml` 的前台服务权限
+- 计时器在后台通过 Service 持续运行
+- 音频播放利用 `audioplayers` 原生后台能力
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **技术选型确认：**
+> 1. **存储方案**: 计划使用 **Hive**（NoSQL）而非 SQLite。Hive 更轻量快速，但不支持复杂 SQL 查询。对于本应用的简单数据结构来说完全足够。如果您偏好 SQLite，请告知。
+> 2. **状态管理**: 计划使用 **Provider**（Flutter 官方推荐的轻量方案）。如果您偏好 Riverpod / BLoC 等方案，请告知。
+> 3. **音频资源**: 内置音频文件（雨声、海浪、颂钵）需要提供实际的音频文件。初期可以使用免费的 CC0 授权音频。您是否有现成的音频资源？
+> 4. **后台运行**: 此功能涉及较多原生平台配置，建议放在最后阶段实现。是否同意？
+> 5. **国际化**: 设计文档中 UI 文字为中文，是否需要支持中英文双语？
+
+---
+
+## Verification Plan
+
+### Automated Tests
+
+由于这是一个全新的 Flutter 项目，将创建以下测试：
+
+1. **Unit Tests** (`test/unit/`)
+   - `storage_service_test.dart`: 测试 Hive CRUD 操作（类型增删改查、记录按日期/类型筛选）
+   - `timer_service_test.dart`: 测试计时器 start/stop/reset 和记录生成
+   - 运行命令：`flutter test test/unit/`
+
+2. **Widget Tests** (`test/widget/`)
+   - `breathing_button_test.dart`: 测试按钮状态切换和动画触发
+   - `heatmap_widget_test.dart`: 测试热力图颜色映射逻辑
+   - 运行命令：`flutter test test/widget/`
+
+3. **构建验证**
+   - 运行 `flutter analyze` 确保无静态分析错误
+   - 运行 `flutter build apk --debug` 确保 Android 构建成功
+
+### Manual Verification
+
+> [!NOTE]
+> 以下手动测试需要在真机或模拟器上进行，计划在完成阶段性开发后请您协助验证。
+
+1. **冥想计时流程**：打开 App → 选择类型 → 点击呼吸灯按钮开始 → 等待几秒 → 再次点击结束 → 确认记录已保存
+2. **音频播放**：开始冥想时选择音频 → 确认播放正常 → 结束冥想后音频停止
+3. **统计页面**：完成几次冥想后切换到统计页 → 确认热力图显示当天有记录 → 确认图表数据正确
+4. **类型管理**：添加/编辑/删除类型 → 确认变更即时反映
+5. **UI/动画**：确认深色主题正确、呼吸灯动效流畅、页面切换动画平滑
